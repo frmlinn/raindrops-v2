@@ -51,13 +51,13 @@ async function init() {
         dropAlphaTex, dropColorTex, dropShineTex,
         floorColorTex, floorNormalTex, floorRoughnessTex, splashTex 
     ] = await Promise.all([
-        textureLoader.loadAsync('/drop-alpha.webp'),
-        textureLoader.loadAsync('/drop-color.webp'),
-        textureLoader.loadAsync('/drop-shine.webp'),
-        textureLoader.loadAsync('/stone_pathway.webp'), 
-        exrLoader.loadAsync('/stone_pathway_normal.exr'),    
-        exrLoader.loadAsync('/stone_pathway_roughness.exr'),
-        textureLoader.loadAsync('/splash.webp')
+        textureLoader.loadAsync('drop-alpha.webp'),
+        textureLoader.loadAsync('drop-color.webp'),
+        textureLoader.loadAsync('drop-shine.webp'),
+        textureLoader.loadAsync('stone_pathway.webp'), 
+        exrLoader.loadAsync('stone_pathway_normal.exr'),    
+        exrLoader.loadAsync('stone_pathway_roughness.exr'),
+        textureLoader.loadAsync('splash.webp')
     ]);
 
     splashTex.colorSpace = THREE.SRGBColorSpace;
