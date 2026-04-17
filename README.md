@@ -2,7 +2,8 @@
 
 This experiment tries to recreate a realistic rain simulation featuring screen-space lens effects, SDF particles, and PBR environments. Optimized for performance via GPU-driven billboarding, FBO downsampling, and object pooling.
 
-> **Note:** This project originated as a fork of [RainEffect](https://github.com/codrops/RainEffect), but it has evolved significantly with a complete refactor of the core logic, GPU physics, and memory management, leading to the creation of this independent repository.
+> [!NOTE]  
+> This project originated as a fork of [RainEffect](https://github.com/codrops/RainEffect), but it has evolved significantly with a complete refactor of the core logic, GPU physics, and memory management, leading to the creation of this independent repository.
 
 ## Technical Architecture
 
