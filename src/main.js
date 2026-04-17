@@ -2,6 +2,7 @@
  * main.js
  * Entry point for the hyper-realistic rain simulation.
  * Manages 3D environment rendering, screen-space lens effects, and UI controls.
+ * * Refactored: Mobile Responsive Support, Pointer Events, and UI Smart Collapse.
  */
 
 import * as THREE from 'three';
@@ -24,21 +25,28 @@ let copyScene;
 let scene3D, camera3D;
 let environmentLights;
 let rtBg, rtFg; 
+
+// Input Tracking State
 let mouseX = 0;
 let mouseY = 0;
+let targetMouseX = 0;
+let targetMouseY = 0;
+let isTouching = false;
+let resizeTimeout; // Debounce timer for resizing
 
 // Environment Rain State
 let environmentRain; 
 let stormIntensity3D = 0.5; 
 
 async function init() {
-    // Renderer Configuration
+    // --- Renderer Configuration ---
     renderer = new THREE.WebGLRenderer({ antialias: false });
+    // Cap pixel ratio to save VRAM on high-res mobile displays (like iPhones)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(renderer.domElement);
 
-    // 2D Post-processing Scene (Lens Effect)
+    // --- 2D Post-processing Scene (Lens Effect) ---
     scene = new THREE.Scene();
     camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     timer = new THREE.Timer(); 
@@ -112,7 +120,6 @@ async function init() {
     // --- Subsystems Initialization ---
     environmentRain = new Rain3D(scene3D, 10000, splashTex);
 
-    // const dpi = window.devicePixelRatio;
     const simDpi = Math.min(window.devicePixelRatio, 1.25); 
 
     rainSimulation = new RainSimulation(
@@ -192,12 +199,48 @@ async function init() {
 
     updateStormStrength(rainParams.stormStrength);
 
-    // Event Listeners
-    window.addEventListener('mousemove', (e) => {
-        mouseX = (e.clientX / window.innerWidth) * 2 - 1; 
-        mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+    // Auto-collapse GUI on mobile devices to prevent blocking the view
+    if (window.innerWidth <= 768) {
+        gui.close();
+    }
+
+    // --- Input Event Listeners (Universal Pointer API) ---
+    window.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') isTouching = true;
+        targetMouseX = (e.clientX / window.innerWidth) * 2 - 1;
+        targetMouseY = (e.clientY / window.innerHeight) * 2 - 1;
     });
-    window.addEventListener('resize', onWindowResize);
+
+    window.addEventListener('pointermove', (e) => {
+        if (e.pointerType === 'mouse' || isTouching) {
+            targetMouseX = (e.clientX / window.innerWidth) * 2 - 1;
+            targetMouseY = (e.clientY / window.innerHeight) * 2 - 1;
+        }
+    });
+
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+    window.addEventListener('pointerleave', (e) => {
+        if (e.pointerType === 'mouse') {
+            targetMouseX = 0;
+            targetMouseY = 0;
+        }
+    });
+
+    function handlePointerEnd(e) {
+        if (e.pointerType === 'touch') {
+            isTouching = false;
+            // Return to center smoothly when touch ends
+            targetMouseX = 0;
+            targetMouseY = 0;
+        }
+    }
+
+    // Debounced Resize Listener to prevent FBO thrashing on mobile browser bars hide/show
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(onWindowResize, 150);
+    });
     
     onWindowResize();
     renderer.setAnimationLoop(animate);
@@ -257,6 +300,10 @@ function animate(timestamp) {
     const delta = timer.getDelta(); 
     let timeScale = delta / (1 / 60); 
     if (timeScale > 1.1) timeScale = 1.1; 
+
+    // Smooth pointer interpolation (Damping)
+    mouseX += (targetMouseX - mouseX) * 0.1;
+    mouseY += (targetMouseY - mouseY) * 0.1;
 
     if(camera3D) {
         const targetPitch = -0.1 - (mouseY * 0.3);
