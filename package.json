@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.0.0", 
+  "packageManager": "pnpm@11.0.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,7 +13,8 @@
     "vite": "^8.0.1"
   },
   "dependencies": {
-    "lil-gui": "^0.21.0",
-    "three": "^0.183.2"
+    "@tweakpane/plugin-essentials": "^0.2.1",
+    "three": "^0.183.2",
+    "tweakpane": "^4.0.5"
   }
 }
