@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three';
-import { random, chance, times } from './utils.js';
+import { random, chance, times } from '../core/utils.js';
 
 const DROP_SIZE = 128;
 
