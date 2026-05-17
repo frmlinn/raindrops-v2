@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { RainSimulation } from '../simulation/RainSimulation.js';
 import { createRainMaterial } from '../simulation/RainMaterial.js';
-import { conf } from '../conf.js';
+import { conf, fpsGraph } from '../conf.js'; 
+import { InputManager } from './managers/InputManager.js';
 
 export class Engine {
     constructor(container) {
@@ -14,13 +15,12 @@ export class Engine {
 
         this.scene2D = new THREE.Scene();
         this.camera2D = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        
         this.timer = new THREE.Timer(); 
 
-        // --- Render Targets (FBO) ---
         this.rtBg = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
         this.rtFg = new THREE.WebGLRenderTarget(window.innerWidth / 8, window.innerHeight / 8, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 
-        // --- Downsampling Scene ---
         this.copyScene = new THREE.Scene();
         const copyMat = new THREE.MeshBasicMaterial({ 
             map: this.rtBg.texture, 
@@ -30,16 +30,12 @@ export class Engine {
         this.copyMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), copyMat);
         this.copyScene.add(this.copyMesh);
 
-        // Estado del input (Se moverá en Fase 3 al InputManager)
+        this.input = new InputManager();
         this.mouseX = 0;
         this.mouseY = 0;
-        this.targetMouseX = 0;
-        this.targetMouseY = 0;
-        this.isTouching = false;
         
         this.resizeTimeout = null;
 
-        this._setupInputListeners();
         window.addEventListener('resize', () => {
             clearTimeout(this.resizeTimeout);
             this.resizeTimeout = setTimeout(() => this.onResize(), 150);
@@ -55,9 +51,12 @@ export class Engine {
             window.innerHeight * simDpi,
             simDpi, 
             textures.dropAlphaTex.image,
-            textures.dropColorTex.image,
-            conf.rain
+            textures.dropColorTex.image
         );
+
+        conf.rain.minR = this.rainSimulation.options.minR;
+        conf.rain.maxR = this.rainSimulation.options.maxR;
+        conf.rain.autoShrink = this.rainSimulation.options.autoShrink;
 
         const material = createRainMaterial(this.rtBg.texture, this.rtFg.texture, this.rainSimulation.canvasTexture, textures.dropShineTex, {
             renderShine: true,
@@ -70,38 +69,6 @@ export class Engine {
         this.scene2D.add(this.planeMesh);
 
         this.onResize();
-    }
-
-    _setupInputListeners() {
-        window.addEventListener('pointerdown', (e) => {
-            if (e.pointerType === 'touch') this.isTouching = true;
-            this.targetMouseX = (e.clientX / window.innerWidth) * 2 - 1;
-            this.targetMouseY = (e.clientY / window.innerHeight) * 2 - 1;
-        });
-
-        window.addEventListener('pointermove', (e) => {
-            if (e.pointerType === 'mouse' || this.isTouching) {
-                this.targetMouseX = (e.clientX / window.innerWidth) * 2 - 1;
-                this.targetMouseY = (e.clientY / window.innerHeight) * 2 - 1;
-            }
-        });
-
-        const handlePointerEnd = (e) => {
-            if (e.pointerType === 'touch') {
-                this.isTouching = false;
-                this.targetMouseX = 0;
-                this.targetMouseY = 0;
-            }
-        };
-
-        window.addEventListener('pointerup', handlePointerEnd);
-        window.addEventListener('pointercancel', handlePointerEnd);
-        window.addEventListener('pointerleave', (e) => {
-            if (e.pointerType === 'mouse') {
-                this.targetMouseX = 0;
-                this.targetMouseY = 0;
-            }
-        });
     }
 
     onResize() {
@@ -153,19 +120,37 @@ export class Engine {
         }
     }
 
+    async warmUpAsync(textures) {
+        if (!this.environment) return;
+        
+        const vramUploads = Object.values(textures).map(tex => {
+            return new Promise(resolve => {
+                this.renderer.initTexture(tex);
+                resolve();
+            });
+        });
+        await Promise.all(vramUploads);
+
+        await this.renderer.compileAsync(this.environment.scene, this.environment.camera);
+        await this.renderer.compileAsync(this.copyScene, this.camera2D);
+        await this.renderer.compileAsync(this.scene2D, this.camera2D);
+    }
+
     start() {
+        this.timer.reset(); 
         this.renderer.setAnimationLoop((timestamp) => this.animate(timestamp));
     }
 
     animate(timestamp) {
+        if (fpsGraph) fpsGraph.begin(); 
+
         this.timer.update(timestamp); 
         const delta = this.timer.getDelta(); 
         let timeScale = delta / (1 / 60); 
         if (timeScale > 1.1) timeScale = 1.1; 
 
-        // Interpolación suave del cursor
-        this.mouseX += (this.targetMouseX - this.mouseX) * 0.1;
-        this.mouseY += (this.targetMouseY - this.mouseY) * 0.1;
+        this.mouseX += (this.input.targetX - this.mouseX) * 0.1;
+        this.mouseY += (this.input.targetY - this.mouseY) * 0.1;
 
         if (this.environment) {
             const camera3D = this.environment.camera;
@@ -186,7 +171,6 @@ export class Engine {
         }
 
         if (this.rainSimulation) {
-            // Sincronizamos las opciones con la configuración en tiempo real
             this.rainSimulation.options.rainChance = conf.rain.rainChance;
             this.rainSimulation.options.rainLimit = conf.rain.rainLimit;
             this.rainSimulation.options.dropletsRate = conf.rain.dropletsRate;
@@ -199,17 +183,16 @@ export class Engine {
         }
 
         if (this.environment) {
-            // Pass 1: Render 3D environment a FBO
             this.renderer.setRenderTarget(this.rtBg);
             this.renderer.render(this.environment.scene, this.environment.camera);
         }
 
-        // Pass 2: Downsample rtBg a rtFg (Blur pass)
         this.renderer.setRenderTarget(this.rtFg);
         this.renderer.render(this.copyScene, this.camera2D);
 
-        // Pass 3: Composite final 
         this.renderer.setRenderTarget(null);
         this.renderer.render(this.scene2D, this.camera2D);
+
+        if (fpsGraph) fpsGraph.end(); 
     }
 }

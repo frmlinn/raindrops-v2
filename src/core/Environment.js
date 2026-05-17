@@ -15,21 +15,17 @@ export class Environment {
         this._setupLights();
         this._setupFloor(textures);
 
-        // Inicializamos el subsistema 3D
         this.rain3D = new Rain3D(this.scene, 10000, textures.splashTex);
     }
 
     _setupLights() {
-        // Configuración de Niebla
         this.fog = new THREE.FogExp2(conf.scene.bgColor, conf.lights.baseFogDensity);
         this.scene.fog = this.fog;
 
-        // Configuración de Luces
         this.ambientLight = new THREE.AmbientLight(conf.lights.ambientColor, conf.lights.baseAmbientIntensity);
         this.scene.add(this.ambientLight);
 
         this.moonLight = new THREE.DirectionalLight(conf.lights.moonColor, conf.lights.baseMoonIntensity);
-        this.moonLight.position.set(10, 20, -10);
         this.scene.add(this.moonLight);
 
         this.streetLight = new THREE.PointLight(0xffaa55, 1000, 30);
@@ -52,6 +48,7 @@ export class Environment {
         });
 
         const floorGeo = new THREE.PlaneGeometry(50, 50);
+        
         const floorMat = new THREE.MeshStandardMaterial({
             map: floorColorTex,
             normalMap: floorNormalTex,
@@ -64,6 +61,10 @@ export class Environment {
         const floor = new THREE.Mesh(floorGeo, floorMat);
         floor.rotation.x = -Math.PI / 2;
         this.scene.add(floor);
+    }
+
+    updateLightPosition(nx, ny, nz) {
+        this.moonLight.position.set(nx * 30, ny * 30, nz * 30);
     }
 
     updateAtmosphere(stormIntensity) {
