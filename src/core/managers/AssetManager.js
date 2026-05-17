@@ -1,4 +1,7 @@
-// src/core/managers/AssetManager.js
+/**
+ * @file AssetManager.js
+ * @description Handles asynchronous loading and memory management of textures and EXR environment maps.
+ */
 
 import * as THREE from 'three';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
@@ -11,12 +14,16 @@ export class AssetManager {
         this.textures = {};
     }
 
+    /**
+     * Loads all required visual assets and triggers progress callbacks.
+     * @param {Function} [onProgress=null] - Callback triggered on load progress (returns percentage and url).
+     * @returns {Promise<Object>} Dictionary containing loaded THREE.Texture objects.
+     */
     async loadAssets(onProgress = null) {
         return new Promise((resolve, reject) => {
             if (onProgress) {
                 this.manager.onProgress = (url, itemsLoaded, itemsTotal) => {
-                    const percent = (itemsLoaded / itemsTotal) * 100;
-                    onProgress(percent.toFixed(0), url);
+                    onProgress((itemsLoaded / itemsTotal) * 100, url);
                 };
             }
 
@@ -26,8 +33,8 @@ export class AssetManager {
             };
 
             this.manager.onError = (url) => {
-                console.error(`[AssetManager] Error cargando asset: ${url}`);
-                reject(new Error(`Fallo al cargar: ${url}`));
+                console.error(`[AssetManager] Failed to load: ${url}`);
+                reject(new Error(`Load failed: ${url}`));
             };
 
             this.textures.dropAlphaTex = this.textureLoader.load('drop-alpha.webp');
@@ -41,9 +48,25 @@ export class AssetManager {
         });
     }
 
+    /**
+     * Pre-configures loaded textures regarding color spaces and wrapping modes.
+     * @private
+     */
     _prepareTextures() {
         this.textures.splashTex.colorSpace = THREE.SRGBColorSpace;
         this.textures.dropShineTex.wrapS = THREE.ClampToEdgeWrapping;
         this.textures.dropShineTex.wrapT = THREE.ClampToEdgeWrapping;
+    }
+
+    /**
+     * Safely disposes of all loaded textures to release Video RAM (VRAM).
+     */
+    dispose() {
+        Object.values(this.textures).forEach(tex => {
+            if (tex && typeof tex.dispose === 'function') {
+                tex.dispose();
+            }
+        });
+        this.textures = {};
     }
 }

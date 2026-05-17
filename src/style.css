@@ -24,3 +24,39 @@ canvas {
     width: 100% !important;
     height: 100% !important;
 }
+
+#loader {
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 100%;
+    background: #050b14; 
+    color: #88aaff; 
+    z-index: 9999;
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    font-family: sans-serif; 
+    transition: opacity 0.5s ease;
+}
+
+#loader-text {
+    margin-bottom: 20px;
+}
+
+#loader-bar-container {
+    width: 200px; 
+    height: 4px; 
+    background: #222233; 
+    border-radius: 2px; 
+    overflow: hidden;
+}
+
+#loader-bar {
+    width: 0%; 
+    height: 100%; 
+    background: #88aaff; 
+    transition: width 0.1s linear;
+}

@@ -6,20 +6,12 @@ import * as EssentialsPlugin from '@tweakpane/plugin-essentials';
 export const conf = {
     stormIntensity: 0.35,
     rain: {
-        minR: 10,
-        maxR: 40,
-        autoShrink: true,
-        rainChance: 0.35,
-        rainLimit: 6,
-        dropletsRate: 50,
-        globalTimeScale: 0.45
+        minR: 10, maxR: 40, autoShrink: true, rainChance: 0.35, 
+        rainLimit: 6, dropletsRate: 50, globalTimeScale: 0.45
     },
     lights: {
-        baseAmbientIntensity: 2.5,
-        baseMoonIntensity: 1.5,
-        baseFogDensity: 0.015,
-        ambientColor: 0x222233,
-        moonColor: 0x88aaff,
+        baseAmbientIntensity: 2.5, baseMoonIntensity: 1.5, baseFogDensity: 0.060,
+        ambientColor: 0x222233, moonColor: 0x88aaff,
         moonPad: { x: 0.4, y: -0.4 } 
     },
     scene: {
@@ -28,16 +20,13 @@ export const conf = {
 };
 
 export let fpsGraph = null;
+export let pane = null;
 
 export function initTweakpane(environment) {
-    const pane = new Pane({ title: 'Environment Manager' });
+    pane = new Pane({ title: 'Environment Manager' });
     pane.registerPlugin(EssentialsPlugin);
 
-    fpsGraph = pane.addBlade({
-        view: 'fpsgraph',
-        label: 'FPS',
-        lineCount: 2,
-    });
+    fpsGraph = pane.addBlade({ view: 'fpsgraph', label: 'FPS', lineCount: 2 });
 
     const updateStorm = (value) => {
         conf.stormIntensity = value;
@@ -50,14 +39,8 @@ export function initTweakpane(environment) {
         pane.refresh(); 
     };
 
-    pane.addBinding(conf, 'stormIntensity', {
-        label: 'Storm Intensity',
-        min: 0,
-        max: 1,
-        step: 0.01
-    }).on('change', (ev) => {
-        updateStorm(ev.value);
-    });
+    pane.addBinding(conf, 'stormIntensity', { label: 'Storm Intensity', min: 0, max: 1, step: 0.01 })
+        .on('change', (ev) => updateStorm(ev.value));
     
     const advFolder = pane.addFolder({ title: 'Advanced Physics', expanded: false });
     advFolder.addBinding(conf.rain, 'minR', { min: 5, max: 30, step: 1, label: 'Min Radius' });
@@ -74,11 +57,8 @@ export function initTweakpane(environment) {
     lightFolder.addBinding(environment.fog, 'density', { min: 0, max: 0.1, step: 0.001, label: 'Fog Density' });
     
     lightFolder.addBinding(conf.lights, 'moonPad', {
-        label: 'Moon Vector',
-        picker: 'inline',
-        expanded: true,
-        x: { min: -1.0, max: 1.0 },
-        y: { min: -1.0, max: 1.0 }
+        label: 'Moon Vector', picker: 'inline', expanded: true,
+        x: { min: -1.0, max: 1.0 }, y: { min: -1.0, max: 1.0 }
     }).on('change', (ev) => {
         let nx = ev.value.x;
         let nz = ev.value.y; 
@@ -86,16 +66,13 @@ export function initTweakpane(environment) {
         
         if (distSq > 1.0) {
             const dist = Math.sqrt(distSq);
-            nx /= dist; 
-            nz /= dist;
-            distSq = 1.0;
+            nx /= dist; nz /= dist; distSq = 1.0;
             conf.lights.moonPad.x = nx;
             conf.lights.moonPad.y = nz;
             pane.refresh();
         }
         
         const ny = Math.max(0.05, Math.sqrt(Math.max(0.0, 1.0 - distSq)));
-        
         environment.updateLightPosition(nx, ny, nz);
     });
 
@@ -105,10 +82,15 @@ export function initTweakpane(environment) {
     environment.updateLightPosition(nx, ny, nz);
 
     updateStorm(conf.stormIntensity);
-
-    if (window.innerWidth <= 768) {
-        pane.expanded = false;
-    }
+    if (window.innerWidth <= 768) pane.expanded = false;
 
     return pane;
+}
+
+export function disposeTweakpane() {
+    if (pane) {
+        pane.dispose();
+        pane = null;
+        fpsGraph = null;
+    }
 }

@@ -1,4 +1,7 @@
-// src/core/Engine.js
+/**
+ * @file Engine.js
+ * @description Core rendering loop, Framebuffer Object (FBO) management, and rendering orchestration.
+ */
 
 import * as THREE from 'three';
 import { RainSimulation } from '../simulation/RainSimulation.js';
@@ -7,6 +10,10 @@ import { conf, fpsGraph } from '../conf.js';
 import { InputManager } from './managers/InputManager.js';
 
 export class Engine {
+    /**
+     * Initializes the WebGL Renderer, Scenes, and Render Targets.
+     * @param {HTMLElement} container - The DOM element to attach the canvas to.
+     */
     constructor(container) {
         this.renderer = new THREE.WebGLRenderer({ antialias: false });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -18,6 +25,11 @@ export class Engine {
         
         this.timer = new THREE.Timer(); 
 
+        // Optimization: Instantiate vectors once to prevent Garbage Collection spikes on resize
+        this.uvScale = new THREE.Vector2(1.0, 1.0);
+        this.uvOffset = new THREE.Vector2(0.0, 0.0);
+
+        // --- Render Targets (FBO) ---
         this.rtBg = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
         this.rtFg = new THREE.WebGLRenderTarget(window.innerWidth / 8, window.innerHeight / 8, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 
@@ -36,12 +48,80 @@ export class Engine {
         
         this.resizeTimeout = null;
 
-        window.addEventListener('resize', () => {
-            clearTimeout(this.resizeTimeout);
-            this.resizeTimeout = setTimeout(() => this.onResize(), 150);
-        });
+        // Context binding to prevent memory leaks when removing the event listener
+        this._onResizeBound = this._handleResizeEvent.bind(this);
+        window.addEventListener('resize', this._onResizeBound);
     }
 
+    /**
+     * Handles the window resize event, splitting tasks between synchronous and debounced execution.
+     * @private
+     */
+    _handleResizeEvent() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        // 1. Synchronous screen adjustment to prevent visual stretching on mobile device rotation
+        this.renderer.setSize(width, height);
+
+        if (this.environment && this.environment.camera) {
+            this.environment.camera.aspect = width / height;
+            this.environment.camera.updateProjectionMatrix();
+        }
+
+        if (this.planeMesh && this.planeMesh.material) {
+            this.planeMesh.material.uniforms.uResolution.value.set(width, height);
+            
+            const bgTex = this.planeMesh.material.uniforms.tBg.value;
+            const texRatio = bgTex.image ? (bgTex.image.width / bgTex.image.height) : (width / height);
+            const ratio = width / height;
+            const ratioDelta = ratio - texRatio;
+            
+            // Direct vector mutation using .set() avoiding "new Vector2" object creation
+            if (ratioDelta >= 0.0) {
+                this.planeMesh.material.uniforms.uUvScale.value.set(1.0, 1.0 + ratioDelta);
+                this.planeMesh.material.uniforms.uUvOffset.value.set(0.0, ratioDelta / 2.0);
+            } else {
+                this.planeMesh.material.uniforms.uUvScale.value.set(1.0 - ratioDelta, 1.0);
+                this.planeMesh.material.uniforms.uUvOffset.value.set(-ratioDelta / 2.0, 0.0);
+            }
+        }
+
+        // 2. Asynchronous (Debounce) adjustment for heavy buffers to avoid GPU saturation
+        clearTimeout(this.resizeTimeout);
+        this.resizeTimeout = setTimeout(() => this._debounceResize(width, height), 150);
+    }
+
+    /**
+     * Resizes heavy Framebuffer Objects and 2D canvas simulation.
+     * @param {number} width - Viewport width
+     * @param {number} height - Viewport height
+     * @private
+     */
+    _debounceResize(width, height) {
+        if(this.rtBg && this.rtFg) {
+            this.rtBg.setSize(width, height);
+            this.rtFg.setSize(width / 8, height / 8);
+        }
+
+        if(this.rainSimulation) {
+            const simDpi = Math.min(window.devicePixelRatio, 1.25); 
+            this.rainSimulation.width = width * simDpi;
+            this.rainSimulation.height = height * simDpi;
+            this.rainSimulation.scale = simDpi;
+            
+            this.rainSimulation.canvas.width = this.rainSimulation.width;
+            this.rainSimulation.canvas.height = this.rainSimulation.height;
+            this.rainSimulation.droplets.width = this.rainSimulation.width;
+            this.rainSimulation.droplets.height = this.rainSimulation.height;
+        }
+    }
+
+    /**
+     * Bootstraps the 2D rain simulation and applies the final screen shader material.
+     * @param {Object} textures - Dictionary of loaded textures.
+     * @param {Environment} environment - 3D scene environment instance.
+     */
     initSimulation(textures, environment) {
         this.environment = environment;
         const simDpi = Math.min(window.devicePixelRatio, 1.25); 
@@ -68,79 +148,34 @@ export class Engine {
         this.planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
         this.scene2D.add(this.planeMesh);
 
-        this.onResize();
+        this._handleResizeEvent();
     }
 
-    onResize() {
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        
-        if(this.environment && this.environment.camera) {
-            this.environment.camera.aspect = window.innerWidth / window.innerHeight;
-            this.environment.camera.updateProjectionMatrix();
-        }
-        
-        if(this.rtBg && this.rtFg) {
-            this.rtBg.setSize(window.innerWidth, window.innerHeight);
-            this.rtFg.setSize(window.innerWidth / 8, window.innerHeight / 8);
-        }
-
-        if (this.planeMesh && this.planeMesh.material) {
-            this.planeMesh.material.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-            
-            const bgTex = this.planeMesh.material.uniforms.tBg.value;
-            const texRatio = bgTex.image ? (bgTex.image.width / bgTex.image.height) : (window.innerWidth / window.innerHeight);
-            const ratio = window.innerWidth / window.innerHeight;
-            
-            const scale = new THREE.Vector2(1.0, 1.0);
-            const offset = new THREE.Vector2(0.0, 0.0);
-            const ratioDelta = ratio - texRatio;
-            
-            if (ratioDelta >= 0.0) {
-                scale.y = 1.0 + ratioDelta;
-                offset.y = ratioDelta / 2.0;
-            } else {
-                scale.x = 1.0 - ratioDelta;
-                offset.x = -ratioDelta / 2.0;
-            }
-            
-            this.planeMesh.material.uniforms.uUvScale.value.copy(scale);
-            this.planeMesh.material.uniforms.uUvOffset.value.copy(offset);
-        }
-        
-        if(this.rainSimulation) {
-            const simDpi = Math.min(window.devicePixelRatio, 1.25); 
-            this.rainSimulation.width = window.innerWidth * simDpi;
-            this.rainSimulation.height = window.innerHeight * simDpi;
-            this.rainSimulation.scale = simDpi;
-            
-            this.rainSimulation.canvas.width = this.rainSimulation.width;
-            this.rainSimulation.canvas.height = this.rainSimulation.height;
-            this.rainSimulation.droplets.width = this.rainSimulation.width;
-            this.rainSimulation.droplets.height = this.rainSimulation.height;
-        }
-    }
-
+    /**
+     * Pre-compiles WebGL shaders and uploads textures to VRAM asynchronously.
+     * @param {Object} textures - Dictionary of loaded textures.
+     * @returns {Promise<void>}
+     */
     async warmUpAsync(textures) {
         if (!this.environment) return;
         
-        const vramUploads = Object.values(textures).map(tex => {
-            return new Promise(resolve => {
-                this.renderer.initTexture(tex);
-                resolve();
-            });
-        });
-        await Promise.all(vramUploads);
-
         await this.renderer.compileAsync(this.environment.scene, this.environment.camera);
         await this.renderer.compileAsync(this.copyScene, this.camera2D);
         await this.renderer.compileAsync(this.scene2D, this.camera2D);
     }
 
+    /**
+     * Starts the main animation loop.
+     */
     start() {
         this.timer.reset(); 
         this.renderer.setAnimationLoop((timestamp) => this.animate(timestamp));
     }
 
+    /**
+     * Core rendering loop executed every frame.
+     * @param {number} timestamp - RequestAnimationFrame timestamp.
+     */
     animate(timestamp) {
         if (fpsGraph) fpsGraph.begin(); 
 
@@ -194,5 +229,35 @@ export class Engine {
         this.renderer.render(this.scene2D, this.camera2D);
 
         if (fpsGraph) fpsGraph.end(); 
+    }
+
+    /**
+     * Safely destroys the engine, clears WebGL context, and removes event listeners.
+     */
+    dispose() {
+        this.renderer.setAnimationLoop(null);
+        window.removeEventListener('resize', this._onResizeBound);
+        clearTimeout(this.resizeTimeout);
+
+        if (this.input) this.input.dispose();
+
+        if (this.rtBg) this.rtBg.dispose();
+        if (this.rtFg) this.rtFg.dispose();
+
+        this.copyScene.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+
+        this.scene2D.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+
+        if (this.rainSimulation && typeof this.rainSimulation.dispose === 'function') {
+             this.rainSimulation.dispose();
+        }
+
+        this.renderer.dispose();
     }
 }
